@@ -1,0 +1,79 @@
+1. Core Security Concepts & Architecture (The Big Picture)
+Data At Rest Security: Personal credentials and passwords are never stored as plain text on the disk. They are completely unreadable unless an authorized session is active.
+
+In-Memory Processing (RAM): When a user successfully logs in, the encrypted file is decrypted only into the volatile memory (RAM) as a List<PasswordEntry>. When the user logs out or closes the app, the RAM is cleared, and the updated data is re-encrypted back to the disk.
+
+Principle of Least Privilege & Confidentiality: Passwords are masked with ***** immediately upon selection. They are decrypted in the background but only revealed to the screen on explicit user demand (Secure Reveal).
+
+🔐 2. Cryptographic Algorithms Implemented
+You must clearly distinguish between the two types of cryptography used in your code:
+
+A) SHA-256 (Hashing for User Authentication)
+Type: One-Way Cryptographic Hash Function.
+
+Purpose: Protecting master credentials in users.txt.
+
+Defense Explanation: "Professor, we do not store the user's master password in plain text. Instead, we store its SHA-256 hash. When a user tries to log in, the application hashes the input and compares it with the stored hash. Because hashing is one-way, even if users.txt is leaked, the actual master passwords cannot be reversed or recovered."
+
+Code Reference: HashSHA256(string input) method in Form1.cs.
+
+B) AES-256 (Symmetric Encryption for Data Protection)
+Type: Symmetric Block Cipher (Endorsed by NIST).
+
+Purpose: Encrypting the entire vault file (_data.txt) and individual password entries.
+
+Defense Explanation: "For confidentiality of the stored data, we use AES. Since AES is a symmetric algorithm, it uses the same key for encryption and decryption. We derive a 256-bit strong key from the user's master password using Rfc2898DeriveBytes combined with a unique salt. This ensures that the data can only be decrypted by the exact user who created it."
+
+Code Reference: EncryptAES and DecryptAES methods.
+
+📂 3. Feature-by-Feature Technical Workflow (With Code References)
+When your professor asks you to demonstrate the code execution, walk through these exact cryptographic steps:
+
+Step 1: Login & Automatic Decryption (Secure File Handling)
+The user triggers BtnLogin_Click.
+
+The application validates the hashed master password against users.txt.
+
+Once authorized, LoadAndDecryptUserData(pass) is called.
+
+File Creation Check: If it’s a first-time setup, C# executes File.WriteAllText(CurrentUserFile, ""); to initialize a secure, isolated text file for that specific user.
+
+If a file exists, DecryptAES(fileContent, masterPassword) decrypts the ciphertext from the disk into the runtime RAM environment.
+
+Step 2: Adding a Entry (Secure Storage)
+The user populates the input fields and clicks "Add", triggering BtnAdd_Click.
+
+Encryption Before Storage: string encryptedPass = EncryptAES(txtAppPassword.Text, txtPassword.Text); runs immediately.
+
+The password string turns into a safe Base64 encoded ciphertext block before it ever touches the local system memory array or CSV string structure.
+
+Step 3: Search & Defense Against Shoulder Surfing
+TxtSearch_TextChanged fires a filter inquiry using LINQ: passwordList.Where(p => p.Title.ToLower().Contains(...)).
+
+When selecting an entry, LstEntries_SelectedIndexChanged loads the metadata (Title, URL, Notes) into the UI, but explicitly masks the password: lblSelectedDetails.Text = "... Password: *****".
+
+The true decrypted string stays hidden in a private memory variable (hiddenDecryptedPassword) until BtnReveal_Click or BtnCopy_Click is triggered.
+
+Step 4: Automatic Encryption on Exit (Log Out / App Close)
+When clicking Secure Logout or hitting the window X button, the Form1_FormClosing event intercepts the shutdown lifecycle.
+
+It invokes SaveAndEncryptUserData().
+
+The text builder parses all elements into a CSV matrix, encrypts the entire block via EncryptAES, and writes it cleanly to the disk using File.WriteAllText. At this point, the database is a secure cryptographic brick.
+
+🎯 High-Yield Q&A for Information Security Viva / Interview
+Q1: Why did you convert the AES encrypted bytes into a Base64 string before writing to the file?
+
+Answer: "AES encryption outputs raw binary data (byte[]). Writing raw binary data directly into a .txt or .csv file can cause data corruption because text files attempt to parse binary structures into standard encoding characters (like UTF-8). Base64 safely encodes binary data into an ASCII text format (A-Z, a-z, 0-9), guaranteeing zero data corruption during file read/write operations."
+
+Q2: What is the purpose of the Salt and IV (Initialization Vector) in your AES setup?
+
+Answer: "The IV ensures that if we encrypt identical plain text passwords multiple times, they will result in completely different ciphertexts, preventing pattern analysis attacks. The Salt is used in key derivation (Rfc2898DeriveBytes) to protect the generated key against precomputed Dictionary Attacks and Rainbow Table attacks."
+
+Q3: Why did you choose RNGCryptoServiceProvider instead of C#'s standard Random class for the password generator?
+
+Answer: "The standard Random class in C# is a pseudo-random number generator (PRNG) based on predictable clock cycles, which makes it cryptographically insecure. For a password manager, we must use a Cryptographically Secure Pseudo-Random Number Generator (CSPRNG). RNGCryptoServiceProvider utilizes high-entropy OS system noise, ensuring the generated 12-character passwords have maximum entropy and are fundamentally unpredictable."
+
+Q4: Is there a vulnerability regarding how the Master Key is managed while the app is open?
+
+Answer: "In this baseline architecture, the master password resides in a standard UI TextBox string structure in memory. In a highly strict enterprise environment, a mitigation against memory-dump attacks would be holding sensitive passwords within C#'s SecureString class, which encrypts the string data directly within the kernel space memory." (Answering this will show advanced security awareness!)
